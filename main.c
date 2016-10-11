@@ -5,8 +5,7 @@
 #define YELLOW_LED PIN_D1
 // Global variables:
 
-int1 flag = 0; 
-int1 flag2 = 1;
+int8 flag = 0; 
 long overflow_count;
 
 
@@ -21,20 +20,16 @@ void timer1_isr()
 #int_ext
 void signal_isr()
    {
-      if(flag == 1) {
-      flag = 0;
-      flag2 = 0;
-      }
-      
-      if(flag == 0) {
-      flag = 1;
-      }
+     flag++;
    }
 
 void write_ext_eeprom(int16 address, BYTE data);
 BYTE read_ext_eeprom (int16 address);
 void write_int16_ext_eeprom(int16 address, int16 data);
 int16 read_int16_ext_eeprom(int16 address);
+void print_lcd(char* string_1, char* string_2, float value_1, float value_2);
+void loggin (int16 *address, int16 data_av1, int16 data_av2);
+void read_temperature_register(int8* data_high, int8* data_low);
 
 
 void main()
@@ -54,6 +49,7 @@ void main()
    ext_int_edge(H_TO_L);
    enable_interrupts(int_ext);
    enable_interrupts(global);
+   port_b_pullups(TRUE);
    
    // i2c setup
    output_float (PIN_C4);
@@ -72,6 +68,10 @@ void main()
    float temperature2;
    signed int16 adc_voltage;
    int address = 0;
+   char* temp1 = "TempD: ";
+   char* temp2 = "TempA: ";
+   
+   
    
    // Setup of register4: 
    i2c_start ();
@@ -103,20 +103,17 @@ void main()
    
    while(TRUE)
    {
+    
+     if(flag > 2) {
+      flag = 0;
+     }
+      switch(flag) {
       
-      if(flag2 && !flag) {
+      case 0 :
       
       adc_voltage = read_adc();
        
-      // read from the temperature register.
-      i2c_start();
-      check = i2c_write(0x91);
-      if(!check) {
-         data_high = i2c_read(TRUE);
-         data_low = i2c_read(FALSE);
-         delay_ms(200);
-      }
-      i2c_stop();
+      read_temperature_register(&data_high, &data_low);
       
       // add the data together.
       data =  make16(data_high,data_low);
@@ -128,7 +125,7 @@ void main()
       data_av1 += data;
       data_av2 += adc_voltage;
       
-      printf("Adc: %ld \n ",adc_voltage);
+      
       
       // calculate average and show on display
       if(count >= 8){
@@ -139,27 +136,16 @@ void main()
          temperature2 = (float)data_av2 * resolution;
          
          // print average on LCD:
-         lcd_clear();
-         lcd_gotoxy( 1, 1);
-         strcpy (buf, "TempD: "); // Text to display on line 1
-         lcd_print(buf);
-         sprintf(buf," %2.2f C", temperature1);  // place a string in buf.
-         lcd_gotoxy( 8, 1);             // go to start of LCD line 2
-         lcd_print(buf);   // write buf to LCD
-         strcpy (buf, "TempA: ");
-         lcd_gotoxy( 1, 2);
-         lcd_print(buf);
-         sprintf(buf," %2.2f C", temperature2);
-         lcd_gotoxy( 8,2);
-         lcd_print(buf);
+         print_lcd(temp1, temp2, temperature1, temperature2);
          count = 0;
          data_av1 = 0;
          data_av2 = 0;
       }
-      }
+      break;
       
-      else if(flag) {
-            
+      case 1 :
+         
+         //printf("Løkke 2 \n");
          adc_voltage = read_adc();
           
          // read from the temperature register.
@@ -182,8 +168,6 @@ void main()
          data_av1 += data;
          data_av2 += adc_voltage;
          
-         printf("Adc: %ld \n ",adc_voltage);
-         
          // calculate average and show on display
          if(count >= 8){
             data_av1 = data_av1 >> 3;
@@ -193,46 +177,49 @@ void main()
             temperature2 = (float)data_av2 * resolution;
             
             // Logging:
-            output_high(YELLOW_LED);
-            write_int16_ext_eeprom(address, data_av1);
-            address++;
-            write_int16_ext_eeprom(address, data_av2);
-            address++;
-            output_low(YELLOW_LED);
+            loggin(&address, data_av1, data_av2);
             
             // print average on LCD:
-            lcd_clear();
-            lcd_gotoxy( 1, 1);
-            strcpy (buf, "TempD: "); // Text to display on line 1
-            lcd_print(buf);
-            sprintf(buf," %2.2f C", temperature1);  // place a string in buf.
-            lcd_gotoxy( 8, 1);             // go to start of LCD line 2
-            lcd_print(buf);   // write buf to LCD
-            strcpy (buf, "TempA: ");
-            lcd_gotoxy( 1, 2);
-            lcd_print(buf);
-            sprintf(buf," %2.2f C", temperature2);
-            lcd_gotoxy( 8,2);
-            lcd_print(buf);
+            print_lcd(temp1, temp2, temperature1, temperature2);
+            
             count = 0;
             data_av1 = 0;
             data_av2 = 0;
+           
+      }break;
+         
+         
+         
+       case 2 :
+         disable_interrupts(global);
+         int16 i;
+         // digital for loop:
+         for( i=0; i <= address-2; i +=4)  {
+         
+         float temperatureD = read_int16_ext_eeprom(i)/128.0;
+         
+         printf("Digital thermometer %2.2f C \n", temperatureD);
+         delay_ms(200);
+         
+         }
+         
+         for (i=2; i<= address; i += 4) {
             
-      }
+            float temperatureA = (float)read_int16_ext_eeprom(i)*resolution;
+            
+            printf("Analog thermometer: %2.2f C \n", temperatureA);
+            delay_ms(200);
+         }
          
          
-         
-      } else if(!flag2)
-         
-         
-         
-         
-         
-         flag2 = 1;
+         flag = 0;
+         enable_interrupts(global);
       
       
-   }
+   break;
 
+      }
+   }
 }
 
 
@@ -281,4 +268,47 @@ int8 i;
 int16 data;
 for(i = 0; i < 2; ++i) *((int8 *)(&data) + i) = read_ext_eeprom(address + i);
 return(data);
+}
+
+void print_lcd(char* string_1, char* string_2, float value_1, float value_2) {
+    
+    char buf[17];
+    lcd_clear();
+    lcd_gotoxy( 1, 1);
+    strcpy (buf, string_1); // Text to display on line 1
+    lcd_print(buf);
+    sprintf(buf," %2.2f C", value_1);  // place a string in buf.
+    lcd_gotoxy( 8, 1);             // go to start of LCD line 2
+    lcd_print(buf);   // write buf to LCD
+    strcpy (buf, string_2);
+    lcd_gotoxy( 1, 2);
+    lcd_print(buf);
+    sprintf(buf," %2.2f C", value_2);
+    lcd_gotoxy( 8,2);
+    lcd_print(buf);
+   
+   
+}
+
+
+void loggin (int16 *address, int16 data_av1, int16 data_av2) {
+   output_high(YELLOW_LED);
+   write_int16_ext_eeprom(address, data_av1);
+   *address += 2;
+   write_int16_ext_eeprom(address, data_av2);
+   *address += 2;
+   output_low(YELLOW_LED);
+}
+
+void read_temperature_register(int8* data_high, int8* data_low) {
+// read from the temperature register.
+   int1 check = 1;
+   i2c_start();
+   check = i2c_write(0x91);
+      if(!check) {
+         *data_high = i2c_read(TRUE);
+         *data_low = i2c_read(FALSE);
+         delay_ms(200);
+      }
+   i2c_stop();
 }
