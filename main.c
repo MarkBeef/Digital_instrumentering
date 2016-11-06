@@ -1,4 +1,5 @@
 #include <main.h>
+#include <stdlib.h>
 #use I2C (master, sda = PIN_C4, scl = PIN_C3)
 
 #define resolution 0.039
@@ -17,13 +18,25 @@ void write_int16_ext_eeprom(int16 address, int16 data);
 void delete_eeprom(int16 *address);
 int16 read_int16_ext_eeprom(int16 address);
 BYTE read_ext_eeprom (int16 address);
-void loggin(int16 *address, int16 data_av1, int16 data_av2);
+void loggin(int16 *address, int16 data_av1, int16 data_av2, int8 *sec, int8 *min, int8 *hours, int8 *day, int8 *date, int8 *month, int8 *year);
 void read_temperature_register(int8* data_high, int8* data_low, int16 wait_time);
 void print_lcd(char* string_1, char* string_2, float value_1, float value_2);
 void print_eeprom(int16 address);
 
 int8 BCDtoBIN(int8 x);
 int8 BINtoBCD(int8 x);
+
+void set_real_timer(int8 year, int8 month, int8 date, int8 day, int8 hours, int8 minutes, int8 seconds);
+void set_time_menu();
+void read_time_RTC(int8 *sec, int8 *min, int8 *hours, int8 *day, int8 *date, int8 *month, int8 *year);
+
+void print_RTC(int8 *sec, int8 *min, int8 *hours, int8 *day, int8 *date, int8 *month, int8 *year);
+
+void get_string(char* s, unsigned int8 max);
+signed int8 get_Int8(void);
+signed int16 get_Int16(void);
+
+
 
 void main() {
    
@@ -46,7 +59,15 @@ void main() {
    int16 address = 0;
    char* temp1 = "TempA: ";
    char* temp2 = "TempD: ";
-   int16 wait_time;
+   int16 wait_time = 0;
+   
+   int8 sec;
+   int8 min;
+   int8 hours;
+   int8 day;
+   int8 date;
+   int8 month;
+   int8 year;
    
       // Setup of register4: 
    i2c_start ();
@@ -101,7 +122,6 @@ void main() {
                break;
             case 's':
                logging = 0;
-               printf("%16.0w", address);
                delay_ms(2000);
                CLRScreen();
                menu();
@@ -121,7 +141,12 @@ void main() {
             case 'p' : 
                print_eeprom(address); 
                break;
-            default: break;
+            case 'c' :
+               set_time_menu();
+               break;
+            case 'q' :
+               print_RTC(&sec, &min, &hours, &day, &date, &month, &year); break;
+            default: menu(); break;
          }
       }
        
@@ -151,7 +176,7 @@ void main() {
             temperature2 = (float)data_av2 * resolution;
             
             // Logging:
-            loggin(&address, data_av1, data_av2);
+            loggin(&address, data_av1, data_av2, &sec, &min, &hours, &day, &date, &month, &year);
             
             // print average on LCD:
             print_lcd(temp1, temp2, temperature1, temperature2);
@@ -159,6 +184,7 @@ void main() {
             count = 0;
             data_av1 = 0;
             data_av2 = 0;
+            delay_ms(wait_time);
            
          
       }
@@ -174,16 +200,6 @@ void main() {
 
    
 
-   /* if ( kbhit()) // en karakter er blevet overført til karakterbufferen i PIC'ens hardware
-      {
-         switch(getc()) // karakteren læses fra karakterbufferen, som tømmes
-         {
-         case 'h': display_help(); break;
-         case 'l' : logging = 1; break;
-         case 's': logging = 0; break;
-         case 't' : set_logging_interval(); break;
-         default: break;
-         } */
        
      
 
@@ -248,31 +264,64 @@ return(data);
 void print_eeprom(int16 address) {
    int i;
    float data;
+   int8 time;
    CLRScreen();
    putcursor(1,1);
    printf("TempD:");
    putcursor(20,1);
    printf("TempA");
-   for(i = 0; i <= address-4; i += 4) {
-         putcursor(1,2+(i>>2));
+   putcursor(30,1);
+   printf("Time");
+   for(i = 0; i <= address-11; i += 11) {
+         putcursor(1,2+(i/11));
          data = read_int16_ext_eeprom(i)/128.0;
          printf("%2.2f", data);
-         putcursor(20,2+(i>>2));
+         putcursor(20,2+(i/11));
          data = (float)read_int16_ext_eeprom(i+2)*resolution;
          printf("%2.2f", data);
-         
+         putcursor(30,2+(i/11));
+         time = BCDtoBIN(read_ext_eeprom(i+4));  // seconds
+         printf("%2.0w:",time);
+         time = BCDtoBIN(read_ext_eeprom(i+5)); // minutes
+         printf("%2.0w:",time);
+         time = BCDtoBIN(read_ext_eeprom(i+6)); // hours
+         printf("%2.0w ",time);
+         time = BCDtoBIN(read_ext_eeprom(i+7)); // day
+         printf("%2.0w:",time);
+         time = BCDtoBIN(read_ext_eeprom(i+8)); // date
+         printf("%2.0w:",time);
+         time = BCDtoBIN(read_ext_eeprom(i+9)); // month
+         printf("%2.0w:",time);
+         time = BCDtoBIN(read_ext_eeprom(i+10)); // year
+         printf("%2.0w:",time);
+
       }
    
    
 }
 
 
-void loggin(int16 *address, int16 data_av1, int16 data_av2) {
+void loggin(int16 *address, int16 data_av1, int16 data_av2, int8 *sec, int8 *min, int8 *hours, int8 *day, int8 *date, int8 *month, int8 *year) {
    output_high(YELLOW_LED);
    write_int16_ext_eeprom(*address, data_av1);
    *address += 2;
    write_int16_ext_eeprom(*address, data_av2);
    *address += 2;
+   read_time_RTC(sec, min, hours, day, date, month, year);
+   write_ext_eeprom(*address, *sec);
+   *address += 1;
+   write_ext_eeprom(*address, *min);
+   *address += 1;
+   write_ext_eeprom(*address, *hours);
+   *address += 1;
+   write_ext_eeprom(*address, *day);
+   *address += 1;
+   write_ext_eeprom(*address, *date);
+   *address += 1;
+   write_ext_eeprom(*address, *month);
+   *address += 1;
+   write_ext_eeprom(*address, *year);
+   *address += 1;
    output_low(YELLOW_LED);
 }
 
@@ -284,7 +333,7 @@ void read_temperature_register(int8* data_high, int8* data_low, int16 wait_time)
       if(!check) {
          *data_high = i2c_read(TRUE);
          *data_low = i2c_read(FALSE);
-         delay_ms(200+wait_time);
+         delay_ms(200);
       }
    i2c_stop();
 }
@@ -385,25 +434,15 @@ void display_help() {
 
 int16 set_waittime() {
    CLRScreen();
-   Printf("Enter the desired number for the waittime. Exit by pressing a");
-   putCursor(0,1);
-   int16 wTT = 0;
-   int16 waitTime = 0;
-   char whatsputin;
-   while(TRUE) {
-      if(kbhit()) {
-         whatsputin = getc();
-         wTT = whatsputin - 0x30;
-         if( (wTT >= 0) && (wTT <= 0x09)) {
-            waitTime *= 10;
-            waitTime += wTT;
-         }
-         else if(whatsputin == 'a') {
-            return waitTime;
-            menu();
-         }
-      }
-   }
+   putcursor(1,1);
+   int16 WT;
+   Printf("Enter the desired number for the waittime. Exit by pressing a ");
+   WT = get_int16();
+   
+   menu();
+   
+   return WT;
+   
 }
 
 void menu(){
@@ -411,7 +450,7 @@ void menu(){
 CLRScreen();
 
 putCursor(1,1);
-printf("Press: h for help" );
+printf("Press h for help" );
 putCursor(1,3);
 printf("Press l to start logging" );
 putCursor(1,5);
@@ -422,11 +461,15 @@ putcursor(1,9);
 printf("Press p to print EEPROM");
 putcursor(1,11);
 printf("Press d to reset EEPROM");
+putcursor(1,13);
+printf("Press c to edit time");
+putcursor(1,15);
+printf("Press q to print RTC");
 
 }
 
 
-set_real_timer(int8 year, int8 month, int8 date, int8 day, int8 hours, int8 minutes, int8 seconds) {
+void set_real_timer(int8 year, int8 month, int8 date, int8 day, int8 hours, int8 minutes, int8 seconds) {
    
    int8 this_year = BINtoBCD(year);
    int8 this_month = BINtoBCD(month);
@@ -436,10 +479,136 @@ set_real_timer(int8 year, int8 month, int8 date, int8 day, int8 hours, int8 minu
    int8 this_minutes = BINtoBCD(minutes);
    int8 this_seconds = BINtoBCD(seconds);
    
+   i2c_start();
+   i2c_write(0xD0);
+   i2c_write(0x00);
+   i2c_write(this_seconds);
+   i2c_write(this_minutes);
+   i2c_write(this_hours);
+   i2c_write(this_day);
+   i2c_write(this_date);
+   i2c_write(this_month);
+   i2c_write(this_year);
+   i2c_stop();
+   
+   i2c_start();
+   i2c_write(0xD0);
+   i2c_write(0x00);
+   i2c_stop();
    
    
    
 }
 
-int8 BCDtoBIN(int8 x) { return(((x>>4)*10)+(x%16)) }
-int8 BINtoBCD(int8 x) { return(((x/10)<<4)+(x%10)) }
+void set_time_menu() {
+   
+   CLRScreen();
+   
+   putcursor(1,1);
+   printf("Set minutes: ");
+   int8 minutes = get_Int8();
+   putcursor(1,3);
+   printf("Set hours: ");
+   int8 hours = get_Int8();
+   putcursor(1,5);
+   printf("Set day: ");
+   int8 day = get_Int8();
+   putcursor(1,7);
+   printf("Set date: ");
+   int8 date = get_Int8();   
+   putcursor(1,9);
+   printf("Set month: ");
+   int8 month = get_Int8();
+   putcursor(1,11);
+   printf("Set year: ");
+   int8 year = get_Int8();
+   putcursor(1,13);
+   
+   set_real_timer(year, month, date, day, hours, minutes, 0);
+   delay_ms(100);
+   menu();
+   
+   
+}
+
+void read_time_RTC(int8 *sec, int8 *min, int8 *hours, int8 *day, int8 *date, int8 *month, int8 *year) {
+   
+   i2c_start();
+   i2c_write(0xD1);
+   *sec = i2c_read(TRUE);
+   *min = i2c_read(TRUE);
+   *hours = i2c_read(TRUE);
+   *day = i2c_read(TRUE);
+   *date = i2c_read(TRUE);
+   *month = i2c_read(TRUE);
+   *year = i2c_read(TRUE);
+   i2c_read(FALSE);
+   i2c_stop();
+   
+}
+
+void print_RTC(int8 *sec, int8 *min, int8 *hours, int8 *day, int8 *date, int8 *month, int8 *year) {
+   CLRScreen();
+   read_time_RTC(sec, min, hours, day, date, month, year);
+   putcursor(1,1);
+   printf("Here is the time in BCD: ");
+   putcursor(1,2);
+   printf("%2.0w: %2.0w: %2.0w: %2.0w: %2.0w: %2.0w: %2.0w: ", *sec, *min, *hours, *day, *date, *month, *year);
+   putcursor(1,10);
+   printf("Here is the time in BIN: ");
+   putcursor(1,11);
+   printf("%2.0w: %2.0w: %2.0w: %2.0w: %2.0w: %2.0w: %2.0w: ", BCDtoBin(*sec), BCDtoBin(*min), BCDtoBin(*hours), BCDtoBin(*day), BCDtoBin(*date), BCDtoBin(*month), BCDtoBin(*year));
+   
+   if(kbhit()) {
+   menu();
+   }
+}
+
+int8 BCDtoBIN(int8 x) {return(((x>>4)*10)+(x%16)); }
+int8 BINtoBCD(int8 x) {return(((x/10)<<4)+(x%10)); }
+
+void get_string(char* s, unsigned int8 max) {
+   unsigned int8 len;
+   char c;
+
+   max-=2;
+   len=0;
+   do {
+     c=getc();
+     if(c==8) {  // Backspace
+        if(len>0) {
+          len--;
+          putc(c);
+          putc(' ');
+          putc(c);
+        }
+     } else if ((c>=' ')&&(c<='~'))
+       if(len<=max) {
+         s[len++]=c;
+         putc(c);
+       }
+   } while(c!=13);
+   s[len]=0;
+}
+
+signed int8 get_Int8(void)
+{
+  char s[5];
+  signed int8 i;
+
+  get_string(s, sizeof(s));
+
+  i=atoi(s);
+  return(i);
+}
+
+signed int16 get_Int16(void)
+{
+  char s[7];
+  signed int16 l;
+
+  get_string(s, sizeof(s));
+  l=atol(s);
+  return(l);
+}
+
