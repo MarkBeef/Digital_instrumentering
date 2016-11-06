@@ -1,73 +1,70 @@
 #include <main.h>
 #include <stdlib.h>
+#use rtos(timer=1, minor_cycle=500ms)
 #use I2C (master, sda = PIN_C4, scl = PIN_C3)
 
 #define resolution 0.039
 #define YELLOW_LED PIN_D1
 
+/*#task(rate=500ms, max=10ms)
+void measure_task();
 
+#task(rate=1000ms)
+void display_task();
+*/
 
-void menu();
+#task(rate=500ms)
+void key_task(); 
+
+#task(rate=500ms, enabled=0)
+void log_data_task();
+
+#task(rate = 500ms, enabled=0)
+void delete_eeprom();
+
+#task(rate = 500ms, enabled=0)
+void print_eeprom();
+
+#task(rate = 500ms, enabled=0)
+void set_time_RTC();
+
+void CLRScreen ();
+
+void print_lcd(char* string_1, char* string_2, float value_1, float value_2);
+void loggin(int16 data_av1, int16 data_av2, int8 *sec, int8 *min, int8 *hours, int8 *day, int8 *date, int8 *month, int8 *year);
+void read_time_RTC(int8 *sec, int8 *min, int8 *hours, int8 *day, int8 *date, int8 *month, int8 *year);
+void write_int16_ext_eeprom(int16 address, int16 data);
+void write_ext_eeprom(int16 address, BYTE data);
+BYTE read_ext_eeprom (int16 address);
+int16 read_int16_ext_eeprom(int16 address);
+void read_temperature_register(int8* data_high, int8* data_low);
+
 void CLRScreen ();
 void PutCursor (int x, int y);
 void CLRLine ();
-void display_help();
-int16 set_waittime();
-void write_ext_eeprom(int16 address, BYTE data);
-void write_int16_ext_eeprom(int16 address, int16 data);
-void delete_eeprom(int16 *address);
-int16 read_int16_ext_eeprom(int16 address);
-BYTE read_ext_eeprom (int16 address);
-void loggin(int16 *address, int16 data_av1, int16 data_av2, int8 *sec, int8 *min, int8 *hours, int8 *day, int8 *date, int8 *month, int8 *year);
-void read_temperature_register(int8* data_high, int8* data_low, int16 wait_time);
-void print_lcd(char* string_1, char* string_2, float value_1, float value_2);
-void print_eeprom(int16 address);
 
 int8 BCDtoBIN(int8 x);
 int8 BINtoBCD(int8 x);
-
-void set_real_timer(int8 year, int8 month, int8 date, int8 day, int8 hours, int8 minutes, int8 seconds);
-void set_time_menu();
-void read_time_RTC(int8 *sec, int8 *min, int8 *hours, int8 *day, int8 *date, int8 *month, int8 *year);
-
-void print_RTC(int8 *sec, int8 *min, int8 *hours, int8 *day, int8 *date, int8 *month, int8 *year);
 
 void get_string(char* s, unsigned int8 max);
 signed int8 get_Int8(void);
 signed int16 get_Int16(void);
 
+void menu();
 
 
-void main() {
-   
-   
-   // Oscillator setup
+unsigned int32 value=0;
+unsigned int16 count=0;
+int16 address = 0;
+int16 wait_time = 1;
+int1 logging = 0;
+
+
+void main()
+{
+
    signed int N = 14;
    setup_oscillator(OSC_8MHZ, N);
-   // Variable declartion
-   int1 check = 1;
-   int1 logging =0;
-   signed int8 data_high;
-   signed int8 data_low;
-   signed int16 data;
-   signed int16 data_av1;
-   signed int16 data_av2;
-   int16 count;
-   float temperature1;
-   float temperature2;
-   signed int16 adc_voltage;
-   int16 address = 0;
-   char* temp1 = "TempA: ";
-   char* temp2 = "TempD: ";
-   int16 wait_time = 0;
-   
-   int8 sec;
-   int8 min;
-   int8 hours;
-   int8 day;
-   int8 date;
-   int8 month;
-   int8 year;
    
       // Setup of register4: 
    i2c_start ();
@@ -102,166 +99,131 @@ void main() {
    lcd_init(); // initialize LCD
    lcd_clear(); // reset LCD
    
+   menu();
    
-    menu();
 
-   while(TRUE) { 
-      
-        if ( kbhit()) // en karakter er blevet overført til karakterbufferen i PIC'ens hardware
-      {
-         switch(getc()) // karakteren læses fra karakterbufferen, som tømmes
-         {
-            case 'h': 
-               display_help();
-                  
-               break;
-            case 'l' : 
-               logging = 1; 
-               CLRScreen();
-               printf("Now Logging. Press s to stop.");
-               break;
-            case 's':
-               logging = 0;
-               delay_ms(2000);
-               CLRScreen();
-               menu();
-               break;
-            case 't' : 
-               wait_time = set_waittime(); 
-               break;
-            case 'd' : 
-               CLRScreen();
-               printf("Now Deleting - Please Wait");
-               delete_eeprom(&address);
-               CLRScreen();
-               printf("Finished...");
-               delay_ms(1000);
-               menu();
-               break;
-            case 'p' : 
-               print_eeprom(address); 
-               break;
-            case 'c' :
-               set_time_menu();
-               break;
-            case 'q' :
-               print_RTC(&sec, &min, &hours, &day, &date, &month, &year); break;
-            default: menu(); break;
-         }
-      }
-       
-       if(logging) {
-         
-         adc_voltage = read_adc();
-          
-         // read from the temperature register.
-         read_temperature_register(&data_high, &data_low, wait_time);
-         
-         // add the data together.
-         data =  make16(data_high,data_low);
-         
-         // count number of samples
-         count++;
-         
-         // add samples together.
-         data_av1 += data;
-         data_av2 += adc_voltage;
-         
-         // calculate average and show on display
-         if(count >= 8){
-            data_av1 = data_av1 >> 3;
-            data_av2 = data_av2 >> 3;
-            // store average in the float temperature:
-            temperature1 = data_av1 / 128.0;
-            temperature2 = (float)data_av2 * resolution;
-            
-            // Logging:
-            loggin(&address, data_av1, data_av2, &sec, &min, &hours, &day, &date, &month, &year);
-            
-            // print average on LCD:
-            print_lcd(temp1, temp2, temperature1, temperature2);
-            
-            count = 0;
-            data_av1 = 0;
-            data_av2 = 0;
-            delay_ms(wait_time);
-           
-         
-      }
-      
-   }
-   
-   
-   }
-
-
+   rtos_run();
 
 }
 
-   
-
-       
-     
-
-
-void delete_eeprom(int16 *address) {
-   int16 i;
-   int16 zero = 0;
-   for(i=0; i <= 8192; i += 2){
-      write_int16_ext_eeprom(i, zero);
-   }
-   *address = 0;
-}
-
-
-void write_int16_ext_eeprom(int16 address, int16 data)
+void log_data_task()
 {
-int8 i;
-for(i = 0; i < 2; ++i) write_ext_eeprom(address + i, *((int8 *)(&data) + i));
-}
-
-void write_ext_eeprom(int16 address, BYTE data)
-{
-   int8 status;
-   i2c_start();
-   i2c_write(0xa0); // i2c address for EEPROM, write mode
-   i2c_write((address>>8)&0x1f); // MSB of data address, max 8 kB
-   i2c_write(address); // LSB of data address
-   i2c_write(data); // data byte written to EEPROM
-   i2c_stop();
-   // wait until EEPROM has finished writing
-   i2c_start(); // restart
-   status = i2c_write(0xa0); // get acknowledge from EEPROM
-   while(status == 1) // no acknowledge received from EEPROM, so still busy
-   {
-   i2c_start();
-   status=i2c_write(0xa0); // repeat while busy
-   }
-   i2c_stop();
-   }
+   rtos_await(++count == wait_time);
+   count = 0;
    
-   BYTE read_ext_eeprom (int16 address) {
-   BYTE data;
+   // variables:
+   int8 data_high, data_low;
+   int8 sec, min, hours, day, date, month, year;
+   
+   int16 data_ana = read_adc();
+   
+   char* temp1 = "TempD";
+   char* temp2 = "TempA";
+   // read from the temperature register.
+   read_temperature_register(&data_high, &data_low);
+         
+   // add the data together.
+   int16 data_dig =  make16(data_high,data_low);
+   
+   float temperature1 = data_dig / 128.0;
+   float temperature2 = (float)data_ana * resolution;
+   
+   loggin(data_dig, data_ana, &sec, &min, &hours, &day, &date, &month, &year);
+   
+   print_lcd(temp1, temp2, temperature1, temperature2);
+   
+   CLRScreen();
+   putcursor(1,1);
+   printf("TempD:");
+   putcursor(20,1);
+   printf("TempA");
+   putcursor(30,1);
+   printf("Time");
+   putcursor(1,2);
+   printf("%2.2f", temperature1);
+   putcursor(20,2);
+   printf("%2.2f", temperature2);
+   putcursor(30,2);
+   printf("%2.0w:%2.0w:%2.0w:%2.0w:%2.0w:%2.0w:%2.0w:",BCDtoBIN(sec),BCDtoBIN(min),BCDtoBIN(hours),BCDtoBIN(day),BCDtoBIN(date),BCDtoBIN(month),BCDtoBIN(year)); 
+   
+}
+
+void set_time_RTC()
+{  
+   CLRScreen();
+   putcursor(1,1);
+   printf("Set minutes: ");
+   rtos_await(kbhit());
+   int8 minutes = BINtoBCD(get_Int8());
+   putcursor(1,3);
+   printf("Set hours: ");
+   rtos_await(kbhit());
+   int8 hours = BINtoBCD(get_Int8());
+   putcursor(1,5);
+   printf("Set day: ");
+   rtos_await(kbhit());
+   int8 day = BINtoBCD(get_Int8());
+   putcursor(1,7);
+   printf("Set date: ");
+   rtos_await(kbhit());
+   int8 date = BINtoBCD(get_Int8());   
+   putcursor(1,9);
+   printf("Set month: ");
+   rtos_await(kbhit());
+   int8 month = BINtoBCD(get_Int8());
+   putcursor(1,11);
+   printf("Set year: ");
+   rtos_await(kbhit());
+   int8 year = BINtoBCD(get_Int8());
+   
    i2c_start();
-   i2c_write(0xa0); // i2c address for EEPROM, write mode
-   i2c_write((address>>8)&0x1f); // MSB of data address, max 8kB
-   i2c_write(address); // LSB of data address
-   i2c_start(); // Restart
-   i2c_write(0xa1); // i2c address for EEPROM, read mode
-   data=i2c_read(0); // read byte, send NACK
+   i2c_write(0xD0);
+   i2c_write(0x00);
+   i2c_write(0);
+   i2c_write(minutes);
+   i2c_write(hours);
+   i2c_write(day);
+   i2c_write(date);
+   i2c_write(month);
+   i2c_write(year);
    i2c_stop();
-   return(data);
+   
+   i2c_start();
+   i2c_write(0xD0);
+   i2c_write(0x00);
+   i2c_stop();
+   
+   rtos_disable(set_time_RTC);
+   rtos_enable(key_task);
 }
 
-int16 read_int16_ext_eeprom(int16 address)
+
+void loggin(int16 data_av1, int16 data_av2, int8 *sec, int8 *min, int8 *hours, int8 *day, int8 *date, int8 *month, int8 *year) {
+   output_high(YELLOW_LED);
+   write_int16_ext_eeprom(address, data_av1);
+   address += 2;
+   write_int16_ext_eeprom(address, data_av2);
+   address += 2;
+   read_time_RTC(sec, min, hours, day, date, month, year);
+   write_ext_eeprom(address, *sec);
+   address += 1;
+   write_ext_eeprom(address, *min);
+   address += 1;
+   write_ext_eeprom(address, *hours);
+   address += 1;
+   write_ext_eeprom(address, *day);
+   address += 1;
+   write_ext_eeprom(address, *date);
+   address += 1;
+   write_ext_eeprom(address, *month);
+   address += 1;
+   write_ext_eeprom(address, *year);
+   address += 1;
+   output_low(YELLOW_LED);
+}
+
+void print_eeprom()
 {
-int8 i;
-int16 data;
-for(i = 0; i < 2; ++i) *((int8 *)(&data) + i) = read_ext_eeprom(address + i);
-return(data);
-}
-
-void print_eeprom(int16 address) {
    int i;
    float data;
    int8 time;
@@ -296,36 +258,26 @@ void print_eeprom(int16 address) {
          printf("%2.0w:",time);
 
       }
+      rtos_disable(print_eeprom);
+}
+
+void read_time_RTC(int8 *sec, int8 *min, int8 *hours, int8 *day, int8 *date, int8 *month, int8 *year) {
    
+   i2c_start();
+   i2c_write(0xD1);
+   *sec = i2c_read(TRUE);
+   *min = i2c_read(TRUE);
+   *hours = i2c_read(TRUE);
+   *day = i2c_read(TRUE);
+   *date = i2c_read(TRUE);
+   *month = i2c_read(TRUE);
+   *year = i2c_read(TRUE);
+   i2c_read(FALSE);
+   i2c_stop();
    
 }
 
-
-void loggin(int16 *address, int16 data_av1, int16 data_av2, int8 *sec, int8 *min, int8 *hours, int8 *day, int8 *date, int8 *month, int8 *year) {
-   output_high(YELLOW_LED);
-   write_int16_ext_eeprom(*address, data_av1);
-   *address += 2;
-   write_int16_ext_eeprom(*address, data_av2);
-   *address += 2;
-   read_time_RTC(sec, min, hours, day, date, month, year);
-   write_ext_eeprom(*address, *sec);
-   *address += 1;
-   write_ext_eeprom(*address, *min);
-   *address += 1;
-   write_ext_eeprom(*address, *hours);
-   *address += 1;
-   write_ext_eeprom(*address, *day);
-   *address += 1;
-   write_ext_eeprom(*address, *date);
-   *address += 1;
-   write_ext_eeprom(*address, *month);
-   *address += 1;
-   write_ext_eeprom(*address, *year);
-   *address += 1;
-   output_low(YELLOW_LED);
-}
-
-void read_temperature_register(int8* data_high, int8* data_low, int16 wait_time) {
+void read_temperature_register(int8* data_high, int8* data_low) {
 // read from the temperature register.
    int1 check = 1;
    i2c_start();
@@ -357,6 +309,123 @@ void print_lcd(char* string_1, char* string_2, float value_1, float value_2) {
    
    
 }
+
+
+void measure_task()
+{
+int i;
+output_high(PIN_D0);
+for(i=0;i<100;i++)
+{
+value+=read_adc();
+count++;
+}
+output_low(PIN_D0);
+}
+
+void display_task()
+{
+printf("%lu %lu %lu\n\r",count,value,(value+count/2)/count);
+value=0;
+count =0;
+}
+
+void key_task()
+{
+
+if ( kbhit()) // en karakter er blevet overført til karakterbufferen i PIC'ens hardware
+      {
+         switch(getc()) // karakteren læses fra karakterbufferen, som tømmes
+         {
+            case 'h': 
+               //display_help();
+                  
+               break;
+            case 'l' : 
+               rtos_enable(log_data_task);
+               CLRScreen();
+               printf("Now Logging. Press s to stop.");
+               break;
+            case 's':
+               rtos_disable(log_data_task);
+               break; /*
+            case 't' : 
+               wait_time = set_waittime(); 
+               break; */
+            case 'd' : 
+               rtos_enable(delete_eeprom);
+               break; 
+            case 'p' : 
+               rtos_enable(print_eeprom); 
+               break; 
+            case 'c' :
+               rtos_disable(key_task);
+               rtos_enable(set_time_RTC);
+               
+               
+               break; /*
+            case 'q' :
+               print_RTC(&sec, &min, &hours, &day, &date, &month, &year); break; */
+           // default: menu();  break;
+         }
+      }
+
+}
+
+void delete_eeprom() {
+   address = 0;
+   rtos_disable(delete_eeprom);
+}
+
+void write_int16_ext_eeprom(int16 address, int16 data)
+{
+int8 i;
+for(i = 0; i < 2; ++i) write_ext_eeprom(address + i, *((int8 *)(&data) + i));
+}
+
+void write_ext_eeprom(int16 address, BYTE data)
+{
+   int8 status;
+   i2c_start();
+   i2c_write(0xa0); // i2c address for EEPROM, write mode
+   i2c_write((address>>8)&0x1f); // MSB of data address, max 8 kB
+   i2c_write(address); // LSB of data address
+   i2c_write(data); // data byte written to EEPROM
+   i2c_stop();
+   // wait until EEPROM has finished writing
+   i2c_start(); // restart
+   status = i2c_write(0xa0); // get acknowledge from EEPROM
+   while(status == 1) // no acknowledge received from EEPROM, so still busy
+   {
+   i2c_start();
+   status=i2c_write(0xa0); // repeat while busy
+   }
+   i2c_stop();
+   }
+   
+BYTE read_ext_eeprom (int16 address) {
+   BYTE data;
+   i2c_start();
+   i2c_write(0xa0); // i2c address for EEPROM, write mode
+   i2c_write((address>>8)&0x1f); // MSB of data address, max 8kB
+   i2c_write(address); // LSB of data address
+   i2c_start(); // Restart
+   i2c_write(0xa1); // i2c address for EEPROM, read mode
+   data=i2c_read(0); // read byte, send NACK
+   i2c_stop();
+   return(data);
+}
+
+int16 read_int16_ext_eeprom(int16 address)
+{
+int8 i;
+int16 data;
+for(i = 0; i < 2; ++i) *((int8 *)(&data) + i) = read_ext_eeprom(address + i);
+return(data);
+}
+
+
+
 
 ////////////////////////////////////////////////////////////////////////////
 //// Routines for VT -100 Terminal                                      ////
@@ -431,7 +500,7 @@ void display_help() {
    putCursor(1,6);
    printf("Pressing anything else will fuck your day up!!!");
 }
-
+/*
 int16 set_waittime() {
    CLRScreen();
    putcursor(1,1);
@@ -443,7 +512,7 @@ int16 set_waittime() {
    
    return WT;
    
-}
+} */
 
 void menu(){
 
@@ -465,6 +534,8 @@ putcursor(1,13);
 printf("Press c to edit time");
 putcursor(1,15);
 printf("Press q to print RTC");
+putcursor(1,15);
+printf("Address is currently: %4.0w", address);
 
 }
 
@@ -531,21 +602,7 @@ void set_time_menu() {
    
 }
 
-void read_time_RTC(int8 *sec, int8 *min, int8 *hours, int8 *day, int8 *date, int8 *month, int8 *year) {
-   
-   i2c_start();
-   i2c_write(0xD1);
-   *sec = i2c_read(TRUE);
-   *min = i2c_read(TRUE);
-   *hours = i2c_read(TRUE);
-   *day = i2c_read(TRUE);
-   *date = i2c_read(TRUE);
-   *month = i2c_read(TRUE);
-   *year = i2c_read(TRUE);
-   i2c_read(FALSE);
-   i2c_stop();
-   
-}
+
 
 void print_RTC(int8 *sec, int8 *min, int8 *hours, int8 *day, int8 *date, int8 *month, int8 *year) {
    CLRScreen();
@@ -611,4 +668,3 @@ signed int16 get_Int16(void)
   l=atol(s);
   return(l);
 }
-
