@@ -473,8 +473,6 @@ void menu(){
 
 CLRScreen();
 
-putCursor(1,1);
-printf("Press h for help" );
 putCursor(1,3);
 printf("Press l to start logging" );
 putCursor(1,5);
