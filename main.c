@@ -2,36 +2,69 @@
 #include <stdlib.h>
 #use I2C (master, sda = PIN_C4, scl = PIN_C3)
 
+// The resolution conversion constant for the ADC
 #define resolution 0.039
 #define YELLOW_LED PIN_D1
 
+//////////////////////////////////////////////////////
+//// These are the functions used in the program. //// 
+//////////////////////////////////////////////////////
 
-
+// This function sets up the menu, which is also the help menu.
 void menu();
+
+// Escape codes for easier communication with the terminal emulator
 void CLRScreen ();
 void PutCursor (int x, int y);
 void CLRLine ();
+
 void display_help();
+
+// With this function it is possible to set the time between logs
 int16 set_waittime();
+
+// These functions are used to write and read from the external EEPROM. void write_ext_eeprom(int16 address, BYTE data) and
+// BYTE read_ext_eeprom (int16 address) are include in void write_int16_ext_eeprom(int16 address, int16 data) and 
+// int16 read_int16_ext_eeprom(int16 address). This makes it possible to write and read two bytes at a time.
 void write_ext_eeprom(int16 address, BYTE data);
 void write_int16_ext_eeprom(int16 address, int16 data);
-void delete_eeprom(int16 *address);
 int16 read_int16_ext_eeprom(int16 address);
 BYTE read_ext_eeprom (int16 address);
-void loggin(int16 *address, int16 data_av1, int16 data_av2, int8 *sec, int8 *min, int8 *hours, int8 *day, int8 *date, int8 *month, int8 *year);
-void read_temperature_register(int8* data_high, int8* data_low, int16 wait_time);
-void print_lcd(char* string_1, char* string_2, float value_1, float value_2);
+
+// This functions deletes all the contents of the external EEPROM and sets the address to zero.
+void delete_eeprom(int16 *address);
+
+// This function makes use of the int16 read_int16_ext_eeprom(int16 address) function and prints all the contents of the external
+// EEPROM up to address.
 void print_eeprom(int16 address);
 
+// This function reads the calendar from the RTC. The reason why it takes pointers as variables is because the time variables are 
+// variables in the main. The reason they are that is that troubleshooting was made easy.
+void read_time_RTC(int8 *sec, int8 *min, int8 *hours, int8 *day, int8 *date, int8 *month, int8 *year);
+
+// When this function is called it starts to log the temperatures from the digital and analog thermometer and the time from the RTC.
+// It makes use of the read_Time_RTC function which is why it needs pointers to the time variables.
+void loggin(int16 *address, int16 data_av1, int16 data_av2, int8 *sec, int8 *min, int8 *hours, int8 *day, int8 *date, int8 *month, int8 *year);
+
+//This function reads the temperature from the digital thermometer. Wait_time is needed to set the time between two logs.
+void read_temperature_register(int8* data_high, int8* data_low, int16 wait_time);
+
+// Is used for the LCD module
+void print_lcd(char* string_1, char* string_2, float value_1, float value_2);
+
+// The RTC saves the calendar in the BIN format.
 int8 BCDtoBIN(int8 x);
 int8 BINtoBCD(int8 x);
 
+// set_real_timer makes it able to set the RTC and includes all the I2C protocol. set_time_menu sets up a user friendly menu and 
+// includes the inputs from the emulator terminal
 void set_real_timer(int8 year, int8 month, int8 date, int8 day, int8 hours, int8 minutes, int8 seconds);
 void set_time_menu();
-void read_time_RTC(int8 *sec, int8 *min, int8 *hours, int8 *day, int8 *date, int8 *month, int8 *year);
 
+// Prints the contents of the RTC. This function makes use of read_time_RTC
 void print_RTC(int8 *sec, int8 *min, int8 *hours, int8 *day, int8 *date, int8 *month, int8 *year);
 
+// These functions are used to receive the input from the emulator terminal.
 void get_string(char* s, unsigned int8 max);
 signed int8 get_Int8(void);
 signed int16 get_Int16(void);
@@ -40,13 +73,13 @@ signed int16 get_Int16(void);
 
 void main() {
    
-   
    // Oscillator setup
    signed int N = 14;
    setup_oscillator(OSC_8MHZ, N);
+   
    // Variable declartion
    int1 check = 1;
-   int1 logging =0;
+   int1 logging = 0;       // This is used 
    signed int8 data_high;
    signed int8 data_low;
    signed int16 data;
