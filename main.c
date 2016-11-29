@@ -59,6 +59,8 @@ void main() {
    int8 whoami;
    int8 data_ready;
    int8 accel_x_MSB;
+   int8 accel_x_LSB;
+   int16 accel_x;
    
    // Oscillator has to be set up
    setup_oscillator(OSC_8MHZ, 14);
@@ -68,47 +70,36 @@ void main() {
    
    
    CLRScreen();
-   PutCursor(1,1);
-   int8 a = -128;
-   int8 b = -128;
-   a = a >> 1;
    SRAWDATA acceleration;
    SRAWDATA magneticFlux;
    init_FXOS8700CQ();
    
-   
-   s_i2c_read(FXOS8700CQ_SLAVE_ADDR, FXOS8700CQ_WHOAMI, &whoami, 1);
-   PutCursor(1,1);
-   printf("%d", a);
-   PutCursor(1,2);
-   printf("%d",b);
-   
    while(TRUE) {  
       s_i2c_read(FXOS8700CQ_SLAVE_ADDR,FXOS8700CQ_M_DR_STATUS,&data_ready,1);
+      /*s_i2c_read(FXOS8700CQ_SLAVE_ADDR,0x01,&accel_x_MSB,1);
+      s_i2c_read(FXOS8700CQ_SLAVE_ADDR,0x02,&accel_x_LSB,1);
       delay_ms(1000);
-      if( data_ready && 0x80 ) {
-         //readAccelMagnData(&acceleration, &magneticFlux);
-         s_i2c_read(FXOS8700CQ_SLAVE_ADDR, 0x01, &accel_x_MSB, 1);
-         
-         PutCursor(1,3);
-         printf("Accelerometer x-component MSB: %X",accel_x_MSB);
-         
-         /*PutCursor(1,2);
-         printf("Accelerometer x-component: %LX", acceleration.x);
-         PutCursor(1,3);
-         printf("Accelerometer y-component: %LX", acceleration.y);
-         PutCursor(1,4);
-         printf("Accelerometer z-component: %LX", acceleration.z);
-         PutCursor(1,5);
-         printf("Magnetometer x-component: %LX", magneticFlux.x);
-         PutCursor(1,6);
-         printf("Magnetometer y-component: %LX", magneticFlux.y);
-         PutCursor(1,7);
-         printf("Magnetometer z-component: %LX", magneticFlux.z);*/
-      }
+      accel_x = make16(accel_x_MSB, accel_x_LSB);
+      PutCursor(1,2);
+      printf("Accelerometer x-component: %Ld", accel_x);*/
       
+      if( data_ready && 0x80 ) {
+         readAccelMagnData(&acceleration, &magneticFlux);
+         CLRScreen();
+         PutCursor(1,2);
+         printf("Accelerometer x-component: %Ld", acceleration.x);
+         PutCursor(1,3);
+         printf("Accelerometer y-component: %Ld", acceleration.y);
+         PutCursor(1,4);
+         printf("Accelerometer z-component: %Ld", acceleration.z);
+         PutCursor(1,5);
+         printf("Magnetometer x-component: %Ld", magneticFlux.x);
+         PutCursor(1,6);
+         printf("Magnetometer y-component: %Ld", magneticFlux.y);
+         PutCursor(1,7);
+         printf("Magnetometer z-component: %Ld", magneticFlux.z);
+      }
    }
-
 
 }
 
@@ -123,30 +114,11 @@ int1 readAccelMagnData(SRAWDATA *pAccelData, SRAWDATA *pMagnData) {
    // read FXOS8700CQ_READ_LEN=13 bytes (status byte and the six channels of data)
    if(s_i2c_read(FXOS8700CQ_SLAVE_ADDR, 0x01, &Buffer, 12)) {
       // copy the 14 bit accelerometer byte data into 16 bit words
-      pAccelData->x = (int16)(((Buffer[0] << 8) | Buffer[1]))>> 2;
-      pAccelData->y = (int16)(((Buffer[2] << 8) | Buffer[3]))>> 2;
-      pAccelData->z = (int16)(((Buffer[4] << 8) | Buffer[5]))>> 2;
-      // copy the magnetometer byte data into 16 bit words
-      pMagnData->x = (Buffer[6] << 8) | Buffer[7];
-      pMagnData->y = (Buffer[8] << 8) | Buffer[9];
-      pMagnData->z = (Buffer[10] << 8) | Buffer[11];
-   }
-   else {
-      return 0; // Returns if read not succesful
-   }
-   return 1;  // Returns if read succesful
-}
-
-int1 readAccelMagnData1(SRAWDATA *pAccelData, SRAWDATA *pMagnData) {
-   int8 Buffer[13]; // read buffer
-   // read FXOS8700CQ_READ_LEN=13 bytes (status byte and the six channels of data)
-   if(s_i2c_read(FXOS8700CQ_SLAVE_ADDR, 0x01, &Buffer, 12)) {
-      // copy the 14 bit accelerometer byte data into 16 bit words
-      pAccelData->x = ((Buffer[0] << 8) | Buffer[1]);
-      pAccelData->y = ((Buffer[2] << 8) | Buffer[3]);
-      pAccelData->z = ((Buffer[4] << 8) | Buffer[5]);
+      pAccelData->x = (((int16)Buffer[0] << 8) | Buffer[1]);
+      pAccelData->y = (((int16)Buffer[2] << 8) | Buffer[3]);
+      pAccelData->z = (((int16)Buffer[4] << 8) | Buffer[5]);
       if(pAccelData->x & 0x8000) {
-         pAccelData->x &= 0x7FFF;
+         pAccelData->x *= -1;
          pAccelData->x >>= 2;
          pAccelData->x *= -1;
       }
@@ -154,7 +126,7 @@ int1 readAccelMagnData1(SRAWDATA *pAccelData, SRAWDATA *pMagnData) {
          pAccelData->x >>= 2;
       }
       if(pAccelData->y & 0x8000) {
-         pAccelData->y &= 0x7FFF;
+         pAccelData->y *= -1;
          pAccelData->y >>= 2;
          pAccelData->y *= -1;
       }
@@ -162,7 +134,7 @@ int1 readAccelMagnData1(SRAWDATA *pAccelData, SRAWDATA *pMagnData) {
          pAccelData->y >>= 2;
       }
       if(pAccelData->z & 0x8000) {
-         pAccelData->z &= 0x7FFF;
+         pAccelData->z *= -1;
          pAccelData->z >>= 2;
          pAccelData->z *= -1;
       }
@@ -170,9 +142,9 @@ int1 readAccelMagnData1(SRAWDATA *pAccelData, SRAWDATA *pMagnData) {
          pAccelData->z >>= 2;
       }
       // copy the magnetometer byte data into 16 bit words
-      pMagnData->x = (Buffer[6] << 8) | Buffer[7];
-      pMagnData->y = (Buffer[8] << 8) | Buffer[9];
-      pMagnData->z = (Buffer[10] << 8) | Buffer[11];
+      pMagnData->x = ((int16)Buffer[6] << 8) | Buffer[7];
+      pMagnData->y = ((int16)Buffer[8] << 8) | Buffer[9];
+      pMagnData->z = ((int16)Buffer[10] << 8) | Buffer[11];
    }
    else {
       return 0; // Returns if read not succesful
